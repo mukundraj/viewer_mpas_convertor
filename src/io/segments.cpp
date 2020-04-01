@@ -110,11 +110,12 @@ void segments::load_segments_data(const std::string& filename){
                 formatted_pxyz[cur_seed_id].push_back(pz[j]);
                 // dprint(" %f %f %f, %d, %d", px[j], py[j], pz[j], idx, cur_seg_size);
             }
-           
+            std::reverse(formatted_pxyz[cur_seed_id].begin(), formatted_pxyz[cur_seed_id].end()); // to fix the disconneced segments in viewer
         }
         idx += cur_seg_size;
 
     }
+
 
 
     /*
