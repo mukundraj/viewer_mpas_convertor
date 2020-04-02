@@ -15,6 +15,7 @@ public:
 
     size_t nSteps, nSegments;
     std::vector<double> px, py, pz;
+    std::vector<int> step;
     std::vector<int> segsizes;
     std::vector<int> seedid;
     std::vector<std::vector<double>> formatted_pxyz; // reformatted px,py,pz (merged segments)

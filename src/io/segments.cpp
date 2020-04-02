@@ -7,6 +7,7 @@
 #include "segments.h"
 #include <algorithm>
 #include "misc.h"
+#include <unordered_map>
 
 
 using namespace std;
@@ -42,19 +43,20 @@ void segments::load_segments_data(const std::string& filename){
     int dimid_x, dimid_y, dimid_z, dimid_segsize;
 
 
-    int varid_segsizes, varid_px, varid_py, varid_pz, varid_seedid;
+    int varid_segsizes, varid_px, varid_py, varid_pz, varid_seedid, varid_step;
 
     NC_SAFE_CALL( nc_open(filename.c_str(), NC_NOWRITE, &ncid) );
     NC_SAFE_CALL( nc_inq_dimid(ncid, "x", &dimid_x) );
 
-    NC_SAFE_CALL( nc_open(filename.c_str(), NC_NOWRITE, &ncid) );
+    // NC_SAFE_CALL( nc_open(filename.c_str(), NC_NOWRITE, &ncid) );
     NC_SAFE_CALL( nc_inq_dimid(ncid, "y", &dimid_y) );
 
-    NC_SAFE_CALL( nc_open(filename.c_str(), NC_NOWRITE, &ncid) );
+    // NC_SAFE_CALL( nc_open(filename.c_str(), NC_NOWRITE, &ncid) );
     NC_SAFE_CALL( nc_inq_dimid(ncid, "z", &dimid_z) );
 
-    NC_SAFE_CALL( nc_open(filename.c_str(), NC_NOWRITE, &ncid) );
+    // NC_SAFE_CALL( nc_open(filename.c_str(), NC_NOWRITE, &ncid) );
     NC_SAFE_CALL( nc_inq_dimid(ncid, "segsize", &dimid_segsize) );
+    
 
     NC_SAFE_CALL( nc_inq_dimlen(ncid, dimid_x, &nSteps) );
     NC_SAFE_CALL( nc_inq_dimlen(ncid, dimid_segsize, &nSegments) );
@@ -64,21 +66,24 @@ void segments::load_segments_data(const std::string& filename){
     NC_SAFE_CALL( nc_inq_varid(ncid, "pz", &varid_pz) );
     NC_SAFE_CALL( nc_inq_varid(ncid, "segsizes", &varid_segsizes) );
     NC_SAFE_CALL( nc_inq_varid(ncid, "seedid", &varid_seedid) );
+    NC_SAFE_CALL( nc_inq_varid(ncid, "step", &varid_step) );
 
     px.resize(nSteps);
     py.resize(nSteps);
     pz.resize(nSteps);
     segsizes.resize(nSegments);
     seedid.resize(nSegments);
+    step.resize(nSegments);
 
     size_t start[1] = {0}, count[1] = {nSteps};
-    nc_get_vara_double(ncid, varid_px, start, count, &px[0]);
-    nc_get_vara_double(ncid, varid_py, start, count, &py[0]);
-    nc_get_vara_double(ncid, varid_pz, start, count, &pz[0]);
+    NC_SAFE_CALL(nc_get_vara_double(ncid, varid_px, start, count, &px[0]));
+    NC_SAFE_CALL(nc_get_vara_double(ncid, varid_py, start, count, &py[0]));
+    NC_SAFE_CALL(nc_get_vara_double(ncid, varid_pz, start, count, &pz[0]));
 
     start[0] = 0; count[0] = nSegments;
-    nc_get_vara_int(ncid, varid_segsizes, start, count, &segsizes[0]);
-    nc_get_vara_int(ncid, varid_seedid, start, count, &seedid[0]);
+    NC_SAFE_CALL(nc_get_vara_int(ncid, varid_segsizes, start, count, &segsizes[0]));
+    NC_SAFE_CALL(nc_get_vara_int(ncid, varid_seedid, start, count, &seedid[0]));
+    NC_SAFE_CALL(nc_get_vara_int(ncid, varid_step, start, count, &step[0]));
 
     for (size_t i =0 ;i<segsizes.size(); i++){
         fprintf(stderr, "seg %d\n", segsizes[i]);
@@ -96,23 +101,48 @@ void segments::load_segments_data(const std::string& filename){
 
     formatted_pxyz.resize(numseeds);
 
-    int cur_segment_id = 0;
+    
+
+    std::unordered_map<int, int> trace_sizes;
+    for (size_t i=0; i<nSegments; i++){
+
+        int cur_seed_id = seedid[i];
+        if (trace_sizes.find(cur_seed_id)==trace_sizes.end())
+            trace_sizes[cur_seed_id] = segsizes[i];
+        else
+             trace_sizes[cur_seed_id] += segsizes[i];
+
+    }
+
     int idx = 0;
     for (size_t i=0; i<nSegments; i++){
         
         int cur_seg_size = segsizes[i];
         int cur_seed_id = seedid[i];
+        int start_step = step[i];
         // dprint("ss %d %d", cur_seg_size, cur_seed_id);
         if (cur_seed_id>-1){
-            for (int j=idx; j<idx+cur_seg_size; j++){
-                formatted_pxyz[cur_seed_id].push_back(px[j]);
-                formatted_pxyz[cur_seed_id].push_back(py[j]);
-                formatted_pxyz[cur_seed_id].push_back(pz[j]);
+            
+            formatted_pxyz[cur_seed_id].resize(3*trace_sizes[cur_seed_id]);
+            
+            for (int j=3*start_step; j<3*(start_step+cur_seg_size); j+=3){
+                
+                formatted_pxyz[cur_seed_id][j] = px[idx];
+                formatted_pxyz[cur_seed_id][j+1] = py[idx];
+                formatted_pxyz[cur_seed_id][j+2] = pz[idx];
+
+                idx++;
+
+                // formatted_pxyz[cur_seed_id].push_back(px[j]);
+                // formatted_pxyz[cur_seed_id].push_back(py[j]);
+                // formatted_pxyz[cur_seed_id].push_back(pz[j]);
                 // dprint(" %f %f %f, %d, %d", px[j], py[j], pz[j], idx, cur_seg_size);
             }
-            std::reverse(formatted_pxyz[cur_seed_id].begin(), formatted_pxyz[cur_seed_id].end()); // to fix the disconneced segments in viewer
+            // std::reverse(formatted_pxyz[cur_seed_id].begin(), formatted_pxyz[cur_seed_id].end()); // to fix the disconneced segments in viewer
+        }else{
+            idx += 1;
         }
-        idx += cur_seg_size;
+        // idx += cur_seg_size;
 
     }
 
